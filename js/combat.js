@@ -34,8 +34,12 @@
     if (run.phase === "GAME_OVER") return;
     CTK.Playtest.finishRound(run);
     run.score += 400 + run.round * 50 + run.selectedRisk * 150;
+    const hpBeforeRecovery=run.player.hp;
     const heal=Math.floor(run.player.maxHp * (.15 + .04 * E.st(run,"recovery_routine")));
     run.player.hp=Math.min(run.player.maxHp,run.player.hp + heal);
+    const recovered=run.player.hp-hpBeforeRecovery;
+    CTK.Playtest.recordRecovery(run,recovered);
+    CTK.Playtest.recordHealing(run,recovered);
     S.log(run,"전투 승리 → HP +" + heal);
     if (run.round === 8) {
       run.score += 2500;
@@ -47,9 +51,11 @@
   }
 
   function playerDamage(run, amount, source) {
+    const hpBeforeDamage=run.player.hp;
     const blocked=Math.min(run.player.block,amount);
     run.player.block-=blocked;
     const hp=Math.max(0,amount - blocked - (E.st(run,"stone_skin") ? 2 : 0));
+    let recordedDamage=Math.min(hp,hpBeforeDamage);
     if (!hp && amount) {
       S.log(run,source + " → BLOCK");
       visual(run,"block","BLOCK","player");
@@ -61,13 +67,16 @@
       if (source === "죽음의 폭발") visual(run,"death-burst","DEATH BURST","player");
       if (E.st(run,"second_wind") && !run.combat.secondWindUsed && run.player.hp > 0 && run.player.hp <= run.player.maxHp * .25) {
         run.combat.secondWindUsed=true;
+        const hpBeforeSecondWind=run.player.hp;
         run.player.hp=Math.min(run.player.maxHp,run.player.hp + 10);
+        CTK.Playtest.recordHealing(run,run.player.hp-hpBeforeSecondWind);
         S.log(run,"재기 → HP +10");
       }
       if (run.player.hp <= 0) {
         if (E.st(run,"guardian_angel") && !run.combat.guardianAngelUsed) {
           run.combat.guardianAngelUsed=true;
           run.player.hp=1;
+          recordedDamage=Math.max(0,hpBeforeDamage-run.player.hp);
           run.player.block=12;
           S.log(run,"최후의 기회 → HP 1 / Block 12");
           visual(run,"banner","GUARDIAN ANGEL");
@@ -77,16 +86,19 @@
         }
       }
     }
+    CTK.Playtest.recordPlayerDamage(run,recordedDamage,blocked);
     return {blocked,hp,dead:run.phase === "GAME_OVER"};
   }
 
   function enemyDamage(run, amount, source) {
+    const hpBeforeDamage=run.enemy.hp;
     const blocked=Math.min(run.enemy.block,amount);
     run.enemy.block-=blocked;
     const hp=Math.max(0,amount - blocked);
     if (hp) {
       run.enemy.hp-=hp;
       run.combat.damageToEnemyThisTurn+=hp;
+      CTK.Playtest.recordEnemyDamage(run,Math.min(hp,hpBeforeDamage));
       S.log(run,source + " → 적 " + hp + " 피해");
       visual(run,"enemy-hit","-" + hp,"enemy");
       E.onEnemyDamage(run);
@@ -114,8 +126,10 @@
   function strike(run) {
     if (run.phase !== "PLAYER_TURN" || run.combat.ap < 1) return false;
     run.combat.ap--;
+    CTK.Playtest.recordAPSpent(run,1);
     run.combat.playerActionsThisTurn++;
     const charged=run.player.chargeStacks > 0;
+    if (charged) CTK.Playtest.recordChargedAttack(run);
     const damage=previewStrikeDamage(run);
     if (E.has(run,"armor_plates") && !(charged && E.st(run,"overpower"))) S.log(run,"철갑 → 공격 피해 -1");
     run.combat.strikesThisTurn++;
@@ -126,7 +140,7 @@
     const result=enemyDamage(run,damage,"공격");
     if (result.hp && E.st(run,"vampiric_edge")) {
       const heal=Math.min(3,Math.floor(result.hp * .2));
-      if (heal) { run.player.hp=Math.min(run.player.maxHp,run.player.hp + heal); S.log(run,"흡혈검 → HP +" + heal); }
+      if (heal) { const hpBeforeVampiric=run.player.hp; run.player.hp=Math.min(run.player.maxHp,run.player.hp + heal); CTK.Playtest.recordHealing(run,run.player.hp-hpBeforeVampiric); S.log(run,"흡혈검 → HP +" + heal); }
     }
     if (run.combat.damageToEnemyThisTurn >= 18 && E.has(run,"frenzy")) run.combat.frenzyReady=true;
     if (run.combat.damageToEnemyThisTurn >= 20 && E.has(run,"shield_engine")) run.combat.shieldEnginePending=true;
@@ -149,7 +163,7 @@
   function guard(run) {
     if (run.phase !== "PLAYER_TURN" || run.combat.ap < 1) return false;
     const amount=previewGuardAmount(run);
-    run.combat.ap--; run.combat.playerActionsThisTurn++; run.combat.guardsThisTurn++;
+    run.combat.ap--; CTK.Playtest.recordAPSpent(run,1); run.combat.playerActionsThisTurn++; run.combat.guardsThisTurn++;
     run.player.block+=amount;
     S.log(run,"방어 → Block +" + amount);
     if (E.has(run,"reversal") && run.combat.guardsThisTurn >= 2 && !run.combat.reversalUsed) {
@@ -162,7 +176,7 @@
     if (run.phase !== "PLAYER_TURN" || run.player.chargeStacks >= run.player.maxChargeStacks) return false;
     const free=chargeIsFree(run);
     if (!free && run.combat.ap < 1) return false;
-    if (!free) run.combat.ap--;
+    if (!free) { run.combat.ap--; CTK.Playtest.recordAPSpent(run,1); }
     run.combat.playerActionsThisTurn++; run.combat.firstChargeUsed=true; run.player.chargeStacks++;
     S.log(run,"충전 → " + run.player.chargeStacks + " stack");
     return true;

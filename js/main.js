@@ -25,6 +25,7 @@
   function save() { CTK.Storage.saveRun(CTK.app.run); CTK.app.resumableRun=CTK.app.run; CTK.UI.render(); }
   function finalize() {
     const run=CTK.app.run;
+    if (!run || !["GAME_OVER","VICTORY"].includes(run.phase)) return;
     if (!run.finalScoreApplied) {
       run.score+=run.player.hp * 10;
       run.finalScoreApplied=true;
@@ -45,17 +46,17 @@
     if (CTK.Combat.playerAction(run,type)) {
       CTK.Playtest.recordAction(run,type);
       CTK.Audio.play(type === "strike" ? (charged ? "heavy" : "attack") : type === "guard" ? "guard" : "select");
-      if (CTK.Combat.terminal(run)) finalize(); else save();
+      if (["GAME_OVER","VICTORY"].includes(run.phase)) finalize(); else save();
     }
   }
   function end() {
     const run=CTK.app.run;
     if (!run || run.phase !== "PLAYER_TURN") return;
     CTK.Effects.endPlayerTurn(run);
-    if (CTK.Combat.terminal(run)) return finalize();
+    if (["GAME_OVER","VICTORY"].includes(run.phase)) return finalize();
     run.phase="ENEMY_RESOLVE";
     CTK.Enemy.resolve(run);
-    if (CTK.Combat.terminal(run)) finalize(); else save();
+    if (["GAME_OVER","VICTORY"].includes(run.phase)) finalize(); else save();
   }
   function select(id) {
     const run=CTK.app.run;
