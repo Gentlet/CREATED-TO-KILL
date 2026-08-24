@@ -1,9 +1,95 @@
-(function(){"use strict";const CTK=window.CTK=window.CTK||{},C=CTK.Constants,D=CTK.Data;
-function mutations(r){let used=[];for(const t of C.MUTATION_TIERS[r.round]){let p=D.mutations.filter(x=>x.tier===t&&!r.enemy.mutations.includes(x.id)&&!used.includes(x.id)&&!x.incompatibleWith.some(v=>r.enemy.mutations.includes(v)));let x=CTK.RNG.pick(r,p);if(x)used.push(x.id);}r.pendingMutationChoices=used;}
-function rewards(r){let used=[];for(const rarity of C.REWARD_RARITIES[r.selectedRisk]){let p=D.upgrades.filter(x=>x.rarity===rarity&&!used.includes(x.id)&&(r.player.upgrades[x.id]||0)<x.maxStacks);let x=CTK.RNG.pick(r,p);if(x)used.push(x.id);}r.pendingRewardChoices=used;}
-function save(){CTK.Storage.saveRun(CTK.app.run);CTK.UI.render();}function finalize(){let r=CTK.app.run;if(!r.finalScoreApplied){r.score+=r.player.hp*10;r.finalScoreApplied=true;let m=CTK.app.meta;m.highScore=Math.max(m.highScore,r.score);m.highestRound=Math.max(m.highestRound,r.round);if(r.phase==="VICTORY")m.totalClears++;CTK.Storage.saveMeta(m);}save();}
-function act(t){let r=CTK.app.run;if(!r||r.phase!=="PLAYER_TURN")return;let wasCharged=t==="strike"&&r.player.chargeStacks>0;if(!r.combat.firstAction)r.combat.firstAction=t;if(CTK.Combat.playerAction(r,t)){CTK.Audio.play(t==="strike"?(wasCharged?"heavy":"attack"):t==="guard"?"guard":"select");if(CTK.Combat.terminal(r))finalize();else save();}}
-function end(){let r=CTK.app.run;if(!r||r.phase!=="PLAYER_TURN")return;CTK.Effects.endPlayerTurn(r);if(CTK.Combat.terminal(r))return finalize();r.phase="ENEMY_RESOLVE";CTK.Enemy.resolve(r);if(CTK.Combat.terminal(r))finalize();else save();}
-function select(id){let r=CTK.app.run;if(r.phase==="MUTATION_SELECT"&&r.pendingMutationChoices.includes(id)){r.enemy.mutations.push(id);r.selectedRisk=D.mutationById[id].tier;rewards(r);r.phase="REWARD_SELECT";CTK.Audio.play("select");save();}else if(r.phase==="REWARD_SELECT"&&r.pendingRewardChoices.includes(id)){CTK.State.addUpgrade(r,id);CTK.State.resetCombat(r);CTK.Enemy.start(r);CTK.Audio.play("select");save();}}
-function start(){let r=CTK.State.create(CTK.RNG.newSeed());CTK.app.run=r;CTK.app.meta.totalRuns++;mutations(r);save();}function next(){let r=CTK.app.run;r.round++;r.phase="MUTATION_SELECT";mutations(r);save();}
-CTK.app={run:null,meta:null,settings:null};document.addEventListener("DOMContentLoaded",()=>{CTK.app.meta=CTK.Storage.meta();CTK.app.settings=CTK.Storage.settings();CTK.app.run=CTK.Storage.loadRun();CTK.UI.render();document.body.addEventListener("click",e=>{let b=e.target.closest("[data-new],[data-action],[data-select],[data-setting]");if(!b)return;if(b.dataset.new!==undefined)start();else if(b.dataset.action==="end")end();else if(b.dataset.action==="next")next();else if(b.dataset.action)act(b.dataset.action);else if(b.dataset.select)select(b.dataset.select);else {CTK.app.settings[b.dataset.setting]=!CTK.app.settings[b.dataset.setting];CTK.Storage.saveSettings(CTK.app.settings);CTK.UI.render();}});document.addEventListener("keydown",e=>{let map={"1":"strike","2":"guard","3":"charge"};if(map[e.key]){e.preventDefault();act(map[e.key]);}if(e.code==="Space"){e.preventDefault();end();}});});}());
+(function () {
+  "use strict";
+  const CTK=window.CTK=window.CTK||{}, C=CTK.Constants, D=CTK.Data;
+
+  function mutations(run) {
+    const used=[];
+    for (const tier of C.MUTATION_TIERS[run.round]) {
+      const candidates=D.mutations.filter(item => item.tier === tier && !run.enemy.mutations.includes(item.id) && !used.includes(item.id) && !item.incompatibleWith.some(id => run.enemy.mutations.includes(id)));
+      const item=CTK.RNG.pick(run,candidates);
+      if (item) used.push(item.id);
+    }
+    run.pendingMutationChoices=used;
+  }
+  function rewards(run) {
+    const used=[];
+    for (const rarity of C.REWARD_RARITIES[run.selectedRisk]) {
+      const candidates=D.upgrades.filter(item => item.rarity === rarity && !used.includes(item.id) && (run.player.upgrades[item.id] || 0) < item.maxStacks);
+      const item=CTK.RNG.pick(run,candidates);
+      if (item) used.push(item.id);
+    }
+    run.pendingRewardChoices=used;
+  }
+  function save() { CTK.Storage.saveRun(CTK.app.run); CTK.app.resumableRun=CTK.app.run; CTK.UI.render(); }
+  function finalize() {
+    const run=CTK.app.run;
+    if (!run.finalScoreApplied) {
+      run.score+=run.player.hp * 10;
+      run.finalScoreApplied=true;
+      const meta=CTK.app.meta;
+      meta.highScore=Math.max(meta.highScore,run.score);
+      meta.highestRound=Math.max(meta.highestRound,run.round);
+      if (run.phase === "VICTORY") meta.totalClears++;
+      CTK.Storage.saveMeta(meta);
+    }
+    save();
+  }
+  function act(type) {
+    const run=CTK.app.run;
+    if (!run || run.phase !== "PLAYER_TURN") return;
+    const charged=type === "strike" && run.player.chargeStacks > 0;
+    if (!run.combat.firstAction) run.combat.firstAction=type;
+    if (CTK.Combat.playerAction(run,type)) {
+      CTK.Audio.play(type === "strike" ? (charged ? "heavy" : "attack") : type === "guard" ? "guard" : "select");
+      if (CTK.Combat.terminal(run)) finalize(); else save();
+    }
+  }
+  function end() {
+    const run=CTK.app.run;
+    if (!run || run.phase !== "PLAYER_TURN") return;
+    CTK.Effects.endPlayerTurn(run);
+    if (CTK.Combat.terminal(run)) return finalize();
+    run.phase="ENEMY_RESOLVE";
+    CTK.Enemy.resolve(run);
+    if (CTK.Combat.terminal(run)) finalize(); else save();
+  }
+  function select(id) {
+    const run=CTK.app.run;
+    if (run.phase === "MUTATION_SELECT" && run.pendingMutationChoices.includes(id)) {
+      run.enemy.mutations.push(id); run.selectedRisk=D.mutationById[id].tier; rewards(run); run.phase="REWARD_SELECT"; CTK.Audio.play("select"); save();
+    } else if (run.phase === "REWARD_SELECT" && run.pendingRewardChoices.includes(id)) {
+      CTK.State.addUpgrade(run,id); CTK.State.resetCombat(run); CTK.Enemy.start(run); CTK.Audio.play("select"); save();
+    }
+  }
+  function start() { const run=CTK.State.create(CTK.RNG.newSeed()); CTK.app.run=run; CTK.app.resumableRun=run; CTK.app.meta.totalRuns++; CTK.Storage.saveMeta(CTK.app.meta); mutations(run); save(); }
+  function next() { const run=CTK.app.run; run.round++; run.phase="MUTATION_SELECT"; mutations(run); save(); }
+  function resume() { CTK.app.run=CTK.app.resumableRun; CTK.UI.render(); }
+
+  CTK.app={run:null,resumableRun:null,meta:null,settings:null};
+  document.addEventListener("DOMContentLoaded",() => {
+    CTK.app.meta=CTK.Storage.meta(); CTK.app.settings=CTK.Storage.settings();
+    const saved=CTK.Storage.loadRun();
+    if (saved && !["GAME_OVER","VICTORY"].includes(saved.phase)) CTK.app.resumableRun=saved; else CTK.app.run=saved;
+    CTK.UI.render();
+    document.body.addEventListener("click",event => {
+      const badge=event.target.closest(".badge");
+      if (badge) {
+        document.querySelectorAll(".badge.open").forEach(item => {
+          item.classList.remove("open");
+          item.setAttribute("aria-expanded","false");
+        });
+        badge.classList.add("open");
+        badge.setAttribute("aria-expanded","true");
+        return;
+      }
+      document.querySelectorAll(".badge.open").forEach(item => {
+        item.classList.remove("open");
+        item.setAttribute("aria-expanded","false");
+      });
+      const target=event.target.closest("[data-new],[data-resume],[data-action],[data-select],[data-setting]");
+      if (!target) return;
+      if (target.dataset.new !== undefined) start(); else if (target.dataset.resume !== undefined) resume(); else if (target.dataset.action === "end") end(); else if (target.dataset.action === "next") next(); else if (target.dataset.action) act(target.dataset.action); else if (target.dataset.select) select(target.dataset.select); else { CTK.app.settings[target.dataset.setting]=!CTK.app.settings[target.dataset.setting]; CTK.Storage.saveSettings(CTK.app.settings); CTK.UI.render(); }
+    });
+    document.addEventListener("keydown",event => { const map={"1":"strike","2":"guard","3":"charge"}; if (map[event.key]) { event.preventDefault(); act(map[event.key]); } if (event.code === "Space") { event.preventDefault(); end(); } });
+  });
+}());

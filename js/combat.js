@@ -1,10 +1,161 @@
-(function(){"use strict";const CTK=window.CTK=window.CTK||{},E=CTK.Effects,S=CTK.State;
-function visual(r,type,text){(r.visualEvents||(r.visualEvents=[])).push({type,text});}function terminal(r){return ["GAME_OVER","VICTORY","ROUND_RESULT"].includes(r.phase);}function finish(r,phase,why){if(terminal(r))return;r.phase=phase;r.deathReason=why||"";visual(r,phase==="GAME_OVER"?"defeat":"victory",phase==="GAME_OVER"?"GAME OVER":"VICTORY");}
-function victory(r){if(r.phase==="GAME_OVER")return;r.score+=400+r.round*50+r.selectedRisk*150;let heal=Math.floor(r.player.maxHp*(.15+.04*E.st(r,"recovery_routine")));r.player.hp=Math.min(r.player.maxHp,r.player.hp+heal);S.log(r,"전투 승리 → HP +"+heal);if(r.round===8){r.score+=2500;finish(r,"VICTORY");}else{r.phase="ROUND_RESULT";visual(r,"victory","ROUND CLEARED");}}
-function playerDamage(r,amount,source){let blocked=Math.min(r.player.block,amount);r.player.block-=blocked;let hp=Math.max(0,amount-blocked-(E.st(r,"stone_skin")?2:0));if(!hp&&amount){S.log(r,source+" → BLOCK");visual(r,"block","BLOCK");}if(hp){r.player.hp-=hp;S.log(r,source+" → 플레이어 "+hp+" 피해");visual(r,"damage","-"+hp);if(E.st(r,"second_wind")&&!r.combat.secondWindUsed&&r.player.hp>0&&r.player.hp<=r.player.maxHp*.25){r.combat.secondWindUsed=true;r.player.hp=Math.min(r.player.maxHp,r.player.hp+10);S.log(r,"재기 → HP +10");}if(r.player.hp<=0){if(E.st(r,"guardian_angel")&&!r.combat.guardianAngelUsed){r.combat.guardianAngelUsed=true;r.player.hp=1;r.player.block=12;S.log(r,"최후의 기회 → HP 1 / Block 12");visual(r,"banner","GUARDIAN ANGEL");}else{r.player.hp=0;finish(r,"GAME_OVER",source);}}}return {blocked,hp,dead:r.phase==="GAME_OVER"};}
-function enemyDamage(r,amount,source){let blocked=Math.min(r.enemy.block,amount);r.enemy.block-=blocked;let hp=Math.max(0,amount-blocked);if(hp){r.enemy.hp-=hp;r.combat.damageToEnemyThisTurn+=hp;S.log(r,source+" → 적 "+hp+" 피해");visual(r,"damage","-"+hp);E.onEnemyDamage(r);}if(r.enemy.hp<=0){if(E.has(r,"second_heart")&&!r.combat.secondHeartUsed){r.combat.secondHeartUsed=true;r.enemy.hp=Math.ceil(r.enemy.maxHp*.25);S.log(r,"SECOND HEART → 부활");visual(r,"banner","SECOND HEART / REVIVED");}else{r.enemy.hp=0;if(E.has(r,"death_burst"))playerDamage(r,14,"죽음의 폭발");if(r.phase!=="GAME_OVER")victory(r);}}return {blocked,hp,dead:terminal(r)};}
-function strike(r){if(r.phase!=="PLAYER_TURN"||r.combat.ap<1)return false;r.combat.ap--;r.combat.playerActionsThisTurn++;let charged=r.player.chargeStacks>0,raw=r.player.strikeBase+E.attackBonus(r)+E.chargeBonus(r),dmg=Math.max(1,raw-E.enemyArmor(r,charged&&E.st(r,"overpower")));r.combat.strikesThisTurn++;r.combat.firstStrikeUsed=true;r.combat.bloodRushReady=false;r.player.chargeStacks=0;enemyDamage(r,dmg,"공격");if(r.combat.damageToEnemyThisTurn>=18&&E.has(r,"frenzy"))r.combat.frenzyReady=true;if(r.combat.damageToEnemyThisTurn>=20&&E.has(r,"shield_engine"))r.combat.shieldEnginePending=true;if(terminal(r))return true;if(E.has(r,"barbs"))playerDamage(r,1,"가시");if(terminal(r))return true;if(E.has(r,"mirror_skin")&&r.combat.strikesThisTurn===1)playerDamage(r,Math.min(6,Math.floor(dmg*.4)),"반사 피부");if(terminal(r))return true;if(E.has(r,"adaptive_shell"))r.combat.temporaryEnemyArmor=Math.min(6,r.combat.temporaryEnemyArmor+2);if(E.has(r,"counterlash")&&r.combat.strikesThisTurn===2&&!r.combat.counterlashUsed){r.combat.counterlashUsed=true;playerDamage(r,4,"반격 본능");}return true;}
-function guard(r){if(r.phase!=="PLAYER_TURN"||r.combat.ap<1)return false;r.combat.ap--;r.combat.playerActionsThisTurn++;r.combat.guardsThisTurn++;let n=E.guard(r)+(r.combat.guardsThisTurn===1&&E.st(r,"fortress")?4:0);r.player.block+=n;S.log(r,"방어 → Block +"+n);if(E.has(r,"reversal")&&r.combat.guardsThisTurn>=2&&!r.combat.reversalUsed){r.combat.reversalUsed=true;r.enemy.block+=7;S.log(r,"방어 역전 → 적 Block +7");}return true;}
-function charge(r){if(r.phase!=="PLAYER_TURN"||r.player.chargeStacks>=r.player.maxChargeStacks)return false;let free=(!r.combat.firstChargeUsed&&E.st(r,"calm_mind"))||(r.combat.playerActionsThisTurn===0&&E.st(r,"zero_cost_focus"));if(!free&&r.combat.ap<1)return false;if(!free)r.combat.ap--;r.combat.playerActionsThisTurn++;r.combat.firstChargeUsed=true;r.player.chargeStacks++;S.log(r,"충전 → "+r.player.chargeStacks+" stack");return true;}
-function action(r,type){let ok=type==="strike"?strike(r):type==="guard"?guard(r):charge(r);if(!ok)return false;if(!terminal(r)&&E.has(r,"tripwire")&&r.combat.playerActionsThisTurn===3)playerDamage(r,5,"행동 감지");if(!terminal(r)&&r.combat.mistConcealed)r.combat.mistConcealed=false;return true;}
-CTK.Combat={terminal,applyPlayerDamage:playerDamage,applyEnemyDamage:enemyDamage,strike,guard,charge,playerAction:action};}());
+(function () {
+  "use strict";
+  const CTK = window.CTK = window.CTK || {}, E = CTK.Effects, S = CTK.State;
+  const terminal = run => ["GAME_OVER","VICTORY","ROUND_RESULT"].includes(run.phase);
+  const visual = (run,type,text) => (run.visualEvents || (run.visualEvents=[])).push({type,text});
+
+  function finish(run, phase, reason) {
+    if (terminal(run)) return;
+    run.phase=phase;
+    run.deathReason=reason || "";
+    visual(run,phase === "GAME_OVER" ? "defeat" : "victory",phase === "GAME_OVER" ? "GAME OVER" : "VICTORY");
+  }
+
+  function victory(run) {
+    if (run.phase === "GAME_OVER") return;
+    run.score += 400 + run.round * 50 + run.selectedRisk * 150;
+    const heal=Math.floor(run.player.maxHp * (.15 + .04 * E.st(run,"recovery_routine")));
+    run.player.hp=Math.min(run.player.maxHp,run.player.hp + heal);
+    S.log(run,"전투 승리 → HP +" + heal);
+    if (run.round === 8) {
+      run.score += 2500;
+      finish(run,"VICTORY");
+    } else {
+      run.phase="ROUND_RESULT";
+      visual(run,"victory","ROUND CLEARED");
+    }
+  }
+
+  function playerDamage(run, amount, source) {
+    const blocked=Math.min(run.player.block,amount);
+    run.player.block-=blocked;
+    const hp=Math.max(0,amount - blocked - (E.st(run,"stone_skin") ? 2 : 0));
+    if (!hp && amount) {
+      S.log(run,source + " → BLOCK");
+      visual(run,"block","BLOCK");
+    }
+    if (hp) {
+      run.player.hp-=hp;
+      S.log(run,source + " → 플레이어 " + hp + " 피해");
+      visual(run,"player-hit","-" + hp);
+      if (source === "죽음의 폭발") visual(run,"death-burst","DEATH BURST");
+      if (E.st(run,"second_wind") && !run.combat.secondWindUsed && run.player.hp > 0 && run.player.hp <= run.player.maxHp * .25) {
+        run.combat.secondWindUsed=true;
+        run.player.hp=Math.min(run.player.maxHp,run.player.hp + 10);
+        S.log(run,"재기 → HP +10");
+      }
+      if (run.player.hp <= 0) {
+        if (E.st(run,"guardian_angel") && !run.combat.guardianAngelUsed) {
+          run.combat.guardianAngelUsed=true;
+          run.player.hp=1;
+          run.player.block=12;
+          S.log(run,"최후의 기회 → HP 1 / Block 12");
+          visual(run,"banner","GUARDIAN ANGEL");
+        } else {
+          run.player.hp=0;
+          finish(run,"GAME_OVER",source);
+        }
+      }
+    }
+    return {blocked,hp,dead:run.phase === "GAME_OVER"};
+  }
+
+  function enemyDamage(run, amount, source) {
+    const blocked=Math.min(run.enemy.block,amount);
+    run.enemy.block-=blocked;
+    const hp=Math.max(0,amount - blocked);
+    if (hp) {
+      run.enemy.hp-=hp;
+      run.combat.damageToEnemyThisTurn+=hp;
+      S.log(run,source + " → 적 " + hp + " 피해");
+      visual(run,"enemy-hit","-" + hp);
+      E.onEnemyDamage(run);
+    }
+    if (run.enemy.hp <= 0) {
+      if (E.has(run,"second_heart") && !run.combat.secondHeartUsed) {
+        run.combat.secondHeartUsed=true;
+        run.enemy.hp=Math.ceil(run.enemy.maxHp * .25);
+        S.log(run,"SECOND HEART → 부활");
+        visual(run,"second-heart","SECOND HEART / REVIVED");
+      } else {
+        run.enemy.hp=0;
+        if (!run.combat.deferEnemyDeath) resolveEnemyDeath(run);
+      }
+    }
+    return {blocked,hp,dead:terminal(run)};
+  }
+
+  function resolveEnemyDeath(run) {
+    if (run.enemy.hp !== 0 || run.phase === "GAME_OVER") return;
+    if (E.has(run,"death_burst")) playerDamage(run,14,"죽음의 폭발");
+    if (run.phase !== "GAME_OVER") victory(run);
+  }
+
+  function strike(run) {
+    if (run.phase !== "PLAYER_TURN" || run.combat.ap < 1) return false;
+    run.combat.ap--;
+    run.combat.playerActionsThisTurn++;
+    const charged=run.player.chargeStacks > 0;
+    const raw=run.player.strikeBase + E.attackBonus(run) + E.chargeBonus(run);
+    const damage=Math.max(1,raw - E.enemyArmor(run,charged && E.st(run,"overpower")));
+    if (E.has(run,"armor_plates") && !(charged && E.st(run,"overpower"))) S.log(run,"철갑 → 공격 피해 -1");
+    run.combat.strikesThisTurn++;
+    run.combat.firstStrikeUsed=true;
+    run.combat.bloodRushReady=false;
+    run.player.chargeStacks=0;
+    run.combat.deferEnemyDeath=true;
+    const result=enemyDamage(run,damage,"공격");
+    if (result.hp && E.st(run,"vampiric_edge")) {
+      const heal=Math.min(3,Math.floor(result.hp * .2));
+      if (heal) { run.player.hp=Math.min(run.player.maxHp,run.player.hp + heal); S.log(run,"흡혈검 → HP +" + heal); }
+    }
+    if (run.combat.damageToEnemyThisTurn >= 18 && E.has(run,"frenzy")) run.combat.frenzyReady=true;
+    if (run.combat.damageToEnemyThisTurn >= 20 && E.has(run,"shield_engine")) run.combat.shieldEnginePending=true;
+    if (E.has(run,"barbs")) playerDamage(run,1,"가시");
+    if (run.phase !== "GAME_OVER" && E.has(run,"mirror_skin") && run.combat.strikesThisTurn === 1) playerDamage(run,Math.min(6,Math.floor(result.hp * .4)),"반사 피부");
+    if (run.phase !== "GAME_OVER" && E.has(run,"adaptive_shell")) {
+      const before=run.combat.temporaryEnemyArmor;
+      run.combat.temporaryEnemyArmor=Math.min(6,before + 2);
+      if (run.combat.temporaryEnemyArmor > before) S.log(run,"적응 갑각 → 방어 +" + (run.combat.temporaryEnemyArmor - before));
+    }
+    if (run.phase !== "GAME_OVER" && E.has(run,"counterlash") && run.combat.strikesThisTurn === 2 && !run.combat.counterlashUsed) {
+      run.combat.counterlashUsed=true;
+      playerDamage(run,4,"반격 본능");
+    }
+    run.combat.deferEnemyDeath=false;
+    if (run.phase !== "GAME_OVER") resolveEnemyDeath(run);
+    return true;
+  }
+
+  function guard(run) {
+    if (run.phase !== "PLAYER_TURN" || run.combat.ap < 1) return false;
+    run.combat.ap--; run.combat.playerActionsThisTurn++; run.combat.guardsThisTurn++;
+    const amount=E.guard(run) + (run.combat.guardsThisTurn === 1 && E.st(run,"fortress") ? 4 : 0);
+    run.player.block+=amount;
+    S.log(run,"방어 → Block +" + amount);
+    if (E.has(run,"reversal") && run.combat.guardsThisTurn >= 2 && !run.combat.reversalUsed) {
+      run.combat.reversalUsed=true; run.enemy.block+=7; S.log(run,"방어 역전 → 적 Block +7");
+    }
+    return true;
+  }
+
+  function charge(run) {
+    if (run.phase !== "PLAYER_TURN" || run.player.chargeStacks >= run.player.maxChargeStacks) return false;
+    const free=(!run.combat.firstChargeUsed && E.st(run,"calm_mind")) || (run.combat.playerActionsThisTurn === 0 && E.st(run,"zero_cost_focus"));
+    if (!free && run.combat.ap < 1) return false;
+    if (!free) run.combat.ap--;
+    run.combat.playerActionsThisTurn++; run.combat.firstChargeUsed=true; run.player.chargeStacks++;
+    S.log(run,"충전 → " + run.player.chargeStacks + " stack");
+    return true;
+  }
+
+  function playerAction(run, type) {
+    const accepted=type === "strike" ? strike(run) : type === "guard" ? guard(run) : charge(run);
+    if (!accepted) return false;
+    if (!terminal(run) && E.has(run,"tripwire") && run.combat.playerActionsThisTurn === 3) playerDamage(run,5,"행동 감지");
+    if (!terminal(run) && run.combat.mistConcealed) run.combat.mistConcealed=false;
+    return true;
+  }
+
+  CTK.Combat={terminal,applyPlayerDamage:playerDamage,applyEnemyDamage:enemyDamage,resolveEnemyDeath,strike,guard,charge,playerAction};
+}());
