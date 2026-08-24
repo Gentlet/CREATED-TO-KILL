@@ -2,7 +2,26 @@
   "use strict";
   const CTK = window.CTK = window.CTK || {}, E = CTK.Effects, S = CTK.State;
   const terminal = run => ["GAME_OVER","VICTORY","ROUND_RESULT"].includes(run.phase);
-  const visual = (run,type,text) => (run.visualEvents || (run.visualEvents=[])).push({type,text});
+  const visual = (run,type,text,target) => (run.visualEvents || (run.visualEvents=[])).push({type,text,target});
+
+  function previewStrikeDamage(run) {
+    const charged=run.player.chargeStacks > 0;
+    const raw=run.player.strikeBase + E.attackBonus(run) + E.chargeBonus(run);
+    return Math.max(1,raw - E.enemyArmor(run,charged && E.st(run,"overpower")));
+  }
+
+  function previewGuardAmount(run) {
+    return E.guard(run) + (run.combat.guardsThisTurn === 0 && E.st(run,"fortress") ? 4 : 0);
+  }
+
+  function chargeIsFree(run) {
+    return (!run.combat.firstChargeUsed && E.st(run,"calm_mind")) || (run.combat.playerActionsThisTurn === 0 && E.st(run,"zero_cost_focus"));
+  }
+
+  function previewChargeGain(run) {
+    const current=E.chargeBonus(run);
+    return E.chargeBonus(run,run.player.chargeStacks + 1) - current;
+  }
 
   function finish(run, phase, reason) {
     if (terminal(run)) return;
@@ -13,6 +32,7 @@
 
   function victory(run) {
     if (run.phase === "GAME_OVER") return;
+    CTK.Playtest.finishRound(run);
     run.score += 400 + run.round * 50 + run.selectedRisk * 150;
     const heal=Math.floor(run.player.maxHp * (.15 + .04 * E.st(run,"recovery_routine")));
     run.player.hp=Math.min(run.player.maxHp,run.player.hp + heal);
@@ -32,13 +52,13 @@
     const hp=Math.max(0,amount - blocked - (E.st(run,"stone_skin") ? 2 : 0));
     if (!hp && amount) {
       S.log(run,source + " → BLOCK");
-      visual(run,"block","BLOCK");
+      visual(run,"block","BLOCK","player");
     }
     if (hp) {
       run.player.hp-=hp;
       S.log(run,source + " → 플레이어 " + hp + " 피해");
-      visual(run,"player-hit","-" + hp);
-      if (source === "죽음의 폭발") visual(run,"death-burst","DEATH BURST");
+      visual(run,"player-hit","-" + hp,"player");
+      if (source === "죽음의 폭발") visual(run,"death-burst","DEATH BURST","player");
       if (E.st(run,"second_wind") && !run.combat.secondWindUsed && run.player.hp > 0 && run.player.hp <= run.player.maxHp * .25) {
         run.combat.secondWindUsed=true;
         run.player.hp=Math.min(run.player.maxHp,run.player.hp + 10);
@@ -68,7 +88,7 @@
       run.enemy.hp-=hp;
       run.combat.damageToEnemyThisTurn+=hp;
       S.log(run,source + " → 적 " + hp + " 피해");
-      visual(run,"enemy-hit","-" + hp);
+      visual(run,"enemy-hit","-" + hp,"enemy");
       E.onEnemyDamage(run);
     }
     if (run.enemy.hp <= 0) {
@@ -76,7 +96,7 @@
         run.combat.secondHeartUsed=true;
         run.enemy.hp=Math.ceil(run.enemy.maxHp * .25);
         S.log(run,"SECOND HEART → 부활");
-        visual(run,"second-heart","SECOND HEART / REVIVED");
+        visual(run,"second-heart","SECOND HEART / REVIVED","enemy");
       } else {
         run.enemy.hp=0;
         if (!run.combat.deferEnemyDeath) resolveEnemyDeath(run);
@@ -96,8 +116,7 @@
     run.combat.ap--;
     run.combat.playerActionsThisTurn++;
     const charged=run.player.chargeStacks > 0;
-    const raw=run.player.strikeBase + E.attackBonus(run) + E.chargeBonus(run);
-    const damage=Math.max(1,raw - E.enemyArmor(run,charged && E.st(run,"overpower")));
+    const damage=previewStrikeDamage(run);
     if (E.has(run,"armor_plates") && !(charged && E.st(run,"overpower"))) S.log(run,"철갑 → 공격 피해 -1");
     run.combat.strikesThisTurn++;
     run.combat.firstStrikeUsed=true;
@@ -129,8 +148,8 @@
 
   function guard(run) {
     if (run.phase !== "PLAYER_TURN" || run.combat.ap < 1) return false;
+    const amount=previewGuardAmount(run);
     run.combat.ap--; run.combat.playerActionsThisTurn++; run.combat.guardsThisTurn++;
-    const amount=E.guard(run) + (run.combat.guardsThisTurn === 1 && E.st(run,"fortress") ? 4 : 0);
     run.player.block+=amount;
     S.log(run,"방어 → Block +" + amount);
     if (E.has(run,"reversal") && run.combat.guardsThisTurn >= 2 && !run.combat.reversalUsed) {
@@ -141,7 +160,7 @@
 
   function charge(run) {
     if (run.phase !== "PLAYER_TURN" || run.player.chargeStacks >= run.player.maxChargeStacks) return false;
-    const free=(!run.combat.firstChargeUsed && E.st(run,"calm_mind")) || (run.combat.playerActionsThisTurn === 0 && E.st(run,"zero_cost_focus"));
+    const free=chargeIsFree(run);
     if (!free && run.combat.ap < 1) return false;
     if (!free) run.combat.ap--;
     run.combat.playerActionsThisTurn++; run.combat.firstChargeUsed=true; run.player.chargeStacks++;
@@ -157,5 +176,5 @@
     return true;
   }
 
-  CTK.Combat={terminal,applyPlayerDamage:playerDamage,applyEnemyDamage:enemyDamage,resolveEnemyDeath,strike,guard,charge,playerAction};
+  CTK.Combat={terminal,applyPlayerDamage:playerDamage,applyEnemyDamage:enemyDamage,resolveEnemyDeath,strike,guard,charge,playerAction,previewStrikeDamage,previewGuardAmount,previewChargeGain,chargeIsFree};
 }());
