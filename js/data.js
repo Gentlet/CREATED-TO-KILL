@@ -28,11 +28,11 @@
   ];
   CTK.Data.mutationSynergyById = Object.fromEntries(CTK.Data.mutationSynergies.map(x => [x.id,x]));
   CTK.Data.builds = {
-    strike: { label:"STRIKE", icon:"⚔", synergy:"BLADEMASTER" },
-    guard: { label:"GUARD", icon:"🛡", synergy:"FORTRESS" },
-    charge: { label:"CHARGE", icon:"⚡", synergy:"OVERCHARGE" },
-    survival: { label:"SURVIVAL", icon:"♥", synergy:"UNBREAKABLE" },
-    utility: { label:"UTILITY", icon:"◇", synergy:null }
+    strike: { label:"STRIKE", icon:"⚔", synergy:"BLADEMASTER", threshold:3, requirement:"서로 다른 STRIKE Upgrade 3종", effectDescription:"매 Player Turn 첫 Attack Damage +2" },
+    guard: { label:"GUARD", icon:"🛡", synergy:"FORTRESS", threshold:3, requirement:"서로 다른 GUARD Upgrade 3종", effectDescription:"매 Player Turn 첫 Guard Block +2" },
+    charge: { label:"CHARGE", icon:"⚡", synergy:"OVERCHARGE", threshold:3, requirement:"서로 다른 CHARGE Upgrade 3종", effectDescription:"최대 Charge 상태 Attack Damage +3" },
+    survival: { label:"SURVIVAL", icon:"♥", synergy:"UNBREAKABLE", threshold:3, requirement:"서로 다른 SURVIVAL Upgrade 3종", effectDescription:"Combat당 1회, HP 50% 이하 생존 시 HP +4" },
+    utility: { label:"UTILITY", icon:"◇", synergy:null, threshold:null, requirement:null, effectDescription:null }
   };
   CTK.Data.upgradeBuildTags = {
     honed_edge:"strike", first_blood:"strike", heavy_rhythm:"strike", executioner:"strike", armor_breaker:"strike", master_edge:"strike", vampiric_edge:"strike", blood_rush:"strike",

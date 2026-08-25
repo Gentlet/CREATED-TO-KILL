@@ -42,7 +42,7 @@
       const owned=E.st(run,item.id)>0;
       const current=build && build.synergy ? counts[item.buildTag] : null;
       const selected=current === null ? null : current+(owned ? 0 : 1);
-      const buildPreview=!mutationCard && build ? `<div class="reward-build"><b>${build.icon} ${build.label}</b>${current === null ? `<span>Build Synergy 미포함</span>` : `<span>현재 ${build.label} ${current} → 선택 시 ${selected}</span>`}${current !== null && current < 3 && selected >= 3 ? `<strong>${build.icon} ${build.synergy} · BUILD ONLINE</strong>` : ""}</div>` : "";
+      const buildPreview=!mutationCard && build ? buildRewardPreview(build,current,selected) : "";
       return `<article class="card ${cardClass}"><b class="rarity">${rarityLabel}</b><h3>${item.name}</h3><p>${item.description}</p>${mutationSynergyPreview}${rewardPreview}${buildPreview}<button class="button primary" data-select="${id}">선택</button></article>`;
     }).join("")}</div></div></section>`;
     return runLayout(run, content);
@@ -51,10 +51,17 @@
   function mutationSummary(run) {
     return `<p class="run-summary"><b>ROUND ${run.round}</b> · 최종 HP ${run.player.hp}/${run.player.maxHp}</p><h3>선택한 Mutation</h3><ul class="summary-list">${run.enemy.mutations.map(id => `<li>${D.mutationById[id].name}</li>`).join("")}</ul>`;
   }
+  function buildRewardPreview(build,current,selected) {
+    if (!build.synergy) return `<div class="reward-build"><b>${build.icon} ${build.label}</b><span>Build Synergy 없음</span></div>`;
+    const active=current >= build.threshold, online=!active && selected >= build.threshold;
+    const status=active ? `${build.icon} ${build.synergy} · ACTIVE` : online ? `${build.icon} ${build.synergy} · BUILD ONLINE` : `${build.icon} ${build.synergy} · LOCKED`;
+    const effect=active || online ? build.effectDescription : `${build.requirement} 달성 시: ${build.effectDescription}`;
+    return `<div class="reward-build ${active ? "is-active" : online ? "is-online" : "is-locked"}"><b>${build.icon} ${build.label}</b><span>현재 ${build.label} ${current} / ${build.threshold}</span><span>선택 후 ${build.label} ${selected} / ${build.threshold}</span><strong>${status}</strong><p>${effect}</p></div>`;
+  }
   function upgrades(run) {
     const acquired = D.upgrades.filter(item => (run.player.upgrades[item.id] || 0) > 0);
     const counts=E.buildCounts(run);
-    const buildSummary=`<section class="build-summary" aria-label="Your build"><h3>YOUR BUILD</h3><div class="build-counts">${Object.keys(counts).map(tag => { const build=D.builds[tag], active=counts[tag] >= 3; return `<div class="build-count ${active ? "active" : ""}"><b>${build.icon} ${build.label}</b><span>${counts[tag]}</span>${active ? `<strong>${build.synergy} · ACTIVE</strong>` : ""}</div>`; }).join("")}</div></section>`;
+    const buildSummary=`<section class="build-summary" aria-label="Your build"><h3>YOUR BUILD</h3><div class="build-counts">${Object.keys(counts).map(tag => { const build=D.builds[tag], active=counts[tag] >= build.threshold; return `<div class="build-count ${active ? "active" : "locked"}"><b>${build.icon} ${build.label}</b><span>${counts[tag]} / ${build.threshold}</span><strong>${build.synergy} · ${active ? "ACTIVE" : "LOCKED"}</strong><p>${build.effectDescription}</p></div>`; }).join("")}</div></section>`;
     return `<aside class="upgrades-panel" aria-label="My Upgrades"><h2>MY UPGRADES</h2>${buildSummary}${acquired.length ? `<div class="upgrade-list">${acquired.map(item => {
       const count = run.player.upgrades[item.id];
       return `<article class="upgrade-entry"><div class="upgrade-heading"><h3>${item.name}</h3>${count > 1 ? `<span class="upgrade-count">×${count}</span>` : ""}</div><p>${item.description}</p></article>`;
@@ -110,6 +117,17 @@
     if (E.has(run,"second_heart")) items.push(statusChip(c.secondHeartUsed ? "status-used" : "status-ready",`♥ 두 번째 심장 · ${c.secondHeartUsed ? "USED" : "READY"}`));
     return statusHud("boss",items);
   }
+  function buildEffectState(run,tag) {
+    const c=run.combat;
+    if (tag === "strike") return c.strikesThisTurn === 0 ? "READY" : "USED THIS TURN";
+    if (tag === "guard") return c.guardsThisTurn === 0 ? "READY" : "USED THIS TURN";
+    if (tag === "charge") return run.player.chargeStacks === run.player.maxChargeStacks ? "READY" : `CONDITION NOT MET · Charge ${run.player.chargeStacks}/${run.player.maxChargeStacks}`;
+    return c.unbreakableUsed ? "USED" : "READY";
+  }
+  function buildEffects(run) {
+    const active=E.activeBuilds(run);
+    return active.length ? `<section class="build-effects" aria-label="Active build effects"><b>ACTIVE BUILD EFFECTS</b>${active.map(tag => { const build=D.builds[tag]; return `<article><strong>${build.icon} ${build.synergy}</strong><span>${build.effectDescription}</span><em>${buildEffectState(run,tag)}</em></article>`; }).join("")}</section>` : "";
+  }
 
   function battle(run) {
     const hidden = run.combat.mistConcealed;
@@ -123,7 +141,7 @@
     const chargeStacks=run.player.chargeStacks;
     const chargeDetail=`다음 공격 +${chargeGain}${chargeStacks ? ` · 현재 ${chargeStacks}/${run.player.maxChargeStacks}` : ""}`;
     const chargeDisabled=(!CTK.Combat.chargeIsFree(run) && run.combat.ap<1) || run.player.chargeStacks>=run.player.maxChargeStacks;
-    return `<section class="battle">${mutations(run)}<div class="arena"><div class="topline"><b>ROUND ${run.round}</b><b>TURN ${run.combat.turn}</b></div><div class="combatant" data-combat-target="player">YOU · HP ${run.player.hp}/${run.player.maxHp} · BLOCK ${run.player.block}${bar(run.player.hp, run.player.maxHp, "hp")}${playerStatus(run)}</div><div class="combatant enemy">THE MONSTER · HP ${run.enemy.hp}/${run.enemy.maxHp} · BLOCK ${run.enemy.block}${bar(run.enemy.hp, run.enemy.maxHp, "enemy-hp")}${bossStatus(run)}<div class="monster" data-combat-target="enemy"><div class="eyes"><i class="eye"></i><i class="eye"></i></div><div class="mouth"></div></div><div class="intent"><b>다음 행동: ${intent}</b>${intentDetail ? `<strong class="intent-effect">${intentDetail}</strong>` : ""}${chaosDetail}${E.st(run,"scout") && !hidden ? `<p>다음: ${CTK.Enemy.intentName(run.enemy.nextIntent)}</p>` : ""}</div><div class="badges">${run.enemy.mutations.map(id => { const item=D.mutationById[id]; return `<button class="badge" aria-expanded="false">${item.name}<span class="tooltip">${item.description}</span></button>`; }).join("")}</div></div></div><aside class="controls"><b>AP ${"●".repeat(run.combat.ap)}${"○".repeat(Math.max(0,run.player.maxAp-run.combat.ap))}</b><b class="charge">충전 ${run.player.chargeStacks}/${run.player.maxChargeStacks}</b>${wagerHud(run)}${E.has(run,"deadline") ? `<b class="deadline">☠ DEADLINE ${8-run.combat.enemyTurnsCompleted}</b>` : ""}${button("strike","1 공격",`${attackDamage} Damage${chargeStacks ? ` · Charge ×${chargeStacks}` : ""}`,run.combat.ap<1)}${button("guard","2 방어",`+${guardAmount} Block`,run.combat.ap<1)}${button("charge","3 충전",chargeDetail,chargeDisabled)}${button("end","턴 종료 SPACE","",false)}<ul class="log" aria-label="Combat Log">${run.logs.map(text => `<li>${text}</li>`).join("")}</ul></aside>${upgrades(run)}</section>`;
+    return `<section class="battle">${mutations(run)}<div class="arena"><div class="topline"><b>ROUND ${run.round}</b><b>TURN ${run.combat.turn}</b></div><div class="combatant" data-combat-target="player">YOU · HP ${run.player.hp}/${run.player.maxHp} · BLOCK ${run.player.block}${bar(run.player.hp, run.player.maxHp, "hp")}${buildEffects(run)}${playerStatus(run)}</div><div class="combatant enemy">THE MONSTER · HP ${run.enemy.hp}/${run.enemy.maxHp} · BLOCK ${run.enemy.block}${bar(run.enemy.hp, run.enemy.maxHp, "enemy-hp")}${bossStatus(run)}<div class="monster" data-combat-target="enemy"><div class="eyes"><i class="eye"></i><i class="eye"></i></div><div class="mouth"></div></div><div class="intent"><b>다음 행동: ${intent}</b>${intentDetail ? `<strong class="intent-effect">${intentDetail}</strong>` : ""}${chaosDetail}${E.st(run,"scout") && !hidden ? `<p>다음: ${CTK.Enemy.intentName(run.enemy.nextIntent)}</p>` : ""}</div><div class="badges">${run.enemy.mutations.map(id => { const item=D.mutationById[id]; return `<button class="badge" aria-expanded="false">${item.name}<span class="tooltip">${item.description}</span></button>`; }).join("")}</div></div></div><aside class="controls"><b>AP ${"●".repeat(run.combat.ap)}${"○".repeat(Math.max(0,run.player.maxAp-run.combat.ap))}</b><b class="charge">충전 ${run.player.chargeStacks}/${run.player.maxChargeStacks}</b>${wagerHud(run)}${E.has(run,"deadline") ? `<b class="deadline">☠ DEADLINE ${8-run.combat.enemyTurnsCompleted}</b>` : ""}${button("strike","1 공격",`${attackDamage} Damage${chargeStacks ? ` · Charge ×${chargeStacks}` : ""}`,run.combat.ap<1)}${button("guard","2 방어",`+${guardAmount} Block`,run.combat.ap<1)}${button("charge","3 충전",chargeDetail,chargeDisabled)}${button("end","턴 종료 SPACE","",false)}<ul class="log" aria-label="Combat Log">${run.logs.map(text => `<li>${text}</li>`).join("")}</ul></aside>${upgrades(run)}</section>`;
   }
 
   CTK.UI = {
