@@ -6,12 +6,15 @@
 
   function previewStrikeDamage(run) {
     const charged=run.player.chargeStacks > 0;
-    const raw=run.player.strikeBase + E.attackBonus(run) + E.chargeBonus(run);
+    const firstStrikeBonus=E.hasBuild(run,"strike") && run.combat.strikesThisTurn === 0 ? 2 : 0;
+    const overchargeBonus=E.hasBuild(run,"charge") && charged && run.player.chargeStacks === run.player.maxChargeStacks ? 3 : 0;
+    const raw=run.player.strikeBase + E.attackBonus(run) + E.chargeBonus(run) + firstStrikeBonus + overchargeBonus;
     return Math.max(1,raw - E.enemyArmor(run,charged && E.st(run,"overpower")));
   }
 
   function previewGuardAmount(run) {
-    return E.guard(run) + (run.combat.guardsThisTurn === 0 && E.st(run,"fortress") ? 4 : 0);
+    const firstGuard=run.combat.guardsThisTurn === 0;
+    return E.guard(run) + (firstGuard && E.st(run,"fortress") ? 4 : 0) + (firstGuard && E.hasBuild(run,"guard") ? 2 : 0);
   }
 
   function chargeIsFree(run) {
@@ -32,6 +35,7 @@
 
   function victory(run) {
     if (run.phase === "GAME_OVER") return;
+    CTK.Wager.finish(run,true);
     CTK.Playtest.finishRound(run);
     run.score += 400 + run.round * 50 + run.selectedRisk * 150;
     const hpBeforeRecovery=run.player.hp;
@@ -65,6 +69,14 @@
       S.log(run,source + " → 플레이어 " + hp + " 피해");
       visual(run,"player-hit","-" + hp,"player");
       if (source === "죽음의 폭발") visual(run,"death-burst","DEATH BURST","player");
+      if (E.hasBuild(run,"survival") && !run.combat.unbreakableUsed && run.player.hp > 0 && run.player.hp <= run.player.maxHp * .5) {
+        run.combat.unbreakableUsed=true;
+        const hpBeforeUnbreakable=run.player.hp;
+        run.player.hp=Math.min(run.player.maxHp,run.player.hp + 4);
+        CTK.Playtest.recordHealing(run,run.player.hp-hpBeforeUnbreakable);
+        S.log(run,"UNBREAKABLE → HP +4");
+        visual(run,"heal","+4","player");
+      }
       if (E.st(run,"second_wind") && !run.combat.secondWindUsed && run.player.hp > 0 && run.player.hp <= run.player.maxHp * .25) {
         run.combat.secondWindUsed=true;
         const hpBeforeSecondWind=run.player.hp;
@@ -87,6 +99,7 @@
       }
     }
     CTK.Playtest.recordPlayerDamage(run,recordedDamage,blocked);
+    CTK.Wager.recordDamage(run,recordedDamage);
     return {blocked,hp,dead:run.phase === "GAME_OVER"};
   }
 
@@ -119,7 +132,11 @@
 
   function resolveEnemyDeath(run) {
     if (run.enemy.hp !== 0 || run.phase === "GAME_OVER") return;
-    if (E.has(run,"death_burst")) playerDamage(run,14,"죽음의 폭발");
+    if (E.has(run,"death_burst")) {
+      const damage=E.hasMutationSynergy(run,"last_horror") && run.combat.secondHeartUsed ? 16 : 14;
+      if (damage === 16) S.log(run,"LAST HORROR → 죽음의 폭발 16 피해");
+      playerDamage(run,damage,"죽음의 폭발");
+    }
     if (run.phase !== "GAME_OVER") victory(run);
   }
 
@@ -129,6 +146,7 @@
     CTK.Playtest.recordAPSpent(run,1);
     run.combat.playerActionsThisTurn++;
     const charged=run.player.chargeStacks > 0;
+    CTK.Wager.recordAction(run,"strike",charged);
     if (charged) CTK.Playtest.recordChargedAttack(run);
     const damage=previewStrikeDamage(run);
     if (E.has(run,"armor_plates") && !(charged && E.st(run,"overpower"))) S.log(run,"철갑 → 공격 피해 -1");
@@ -163,7 +181,7 @@
   function guard(run) {
     if (run.phase !== "PLAYER_TURN" || run.combat.ap < 1) return false;
     const amount=previewGuardAmount(run);
-    run.combat.ap--; CTK.Playtest.recordAPSpent(run,1); run.combat.playerActionsThisTurn++; run.combat.guardsThisTurn++;
+    run.combat.ap--; CTK.Playtest.recordAPSpent(run,1); CTK.Wager.recordAction(run,"guard",false); run.combat.playerActionsThisTurn++; run.combat.guardsThisTurn++;
     run.player.block+=amount;
     S.log(run,"방어 → Block +" + amount);
     if (E.has(run,"reversal") && run.combat.guardsThisTurn >= 2 && !run.combat.reversalUsed) {
@@ -177,7 +195,7 @@
     const free=chargeIsFree(run);
     if (!free && run.combat.ap < 1) return false;
     if (!free) { run.combat.ap--; CTK.Playtest.recordAPSpent(run,1); }
-    run.combat.playerActionsThisTurn++; run.combat.firstChargeUsed=true; run.player.chargeStacks++;
+    CTK.Wager.recordAction(run,"charge",false); run.combat.playerActionsThisTurn++; run.combat.firstChargeUsed=true; run.player.chargeStacks++;
     S.log(run,"충전 → " + run.player.chargeStacks + " stack");
     return true;
   }

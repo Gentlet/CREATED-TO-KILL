@@ -18,5 +18,29 @@
     ]
   };
   CTK.Data.mutationById = Object.fromEntries(CTK.Data.mutations.map(x => [x.id,x]));
+  CTK.Data.mutationSynergies = [
+    { id:"rending_fang", name:"RENDING FANG", mutations:["sharp_claws","twin_fang"], description:"쌍격 2-hit 각각 Damage +1" },
+    { id:"undying_flesh", name:"UNDYING FLESH", mutations:["thick_hide","regrowth"], description:"HP 30% 이하에서 재생 HP +3" },
+    { id:"fortress_core", name:"FORTRESS CORE", mutations:["starting_shell","shield_engine"], description:"보호막 엔진 Block +12" },
+    { id:"blood_rage", name:"BLOOD RAGE", mutations:["enrage","berserker"], description:"광폭화 상태 ATK +6" },
+    { id:"decay", name:"DECAY", mutations:["corrosion","bleeding_aura"], description:"첫 실제 출혈 피해 시 부식 Stack +1" },
+    { id:"last_horror", name:"LAST HORROR", mutations:["second_heart","death_burst"], description:"부활 후 최종 사망 시 죽음의 폭발 16 피해" }
+  ];
+  CTK.Data.mutationSynergyById = Object.fromEntries(CTK.Data.mutationSynergies.map(x => [x.id,x]));
+  CTK.Data.builds = {
+    strike: { label:"STRIKE", icon:"⚔", synergy:"BLADEMASTER" },
+    guard: { label:"GUARD", icon:"🛡", synergy:"FORTRESS" },
+    charge: { label:"CHARGE", icon:"⚡", synergy:"OVERCHARGE" },
+    survival: { label:"SURVIVAL", icon:"♥", synergy:"UNBREAKABLE" },
+    utility: { label:"UTILITY", icon:"◇", synergy:null }
+  };
+  CTK.Data.upgradeBuildTags = {
+    honed_edge:"strike", first_blood:"strike", heavy_rhythm:"strike", executioner:"strike", armor_breaker:"strike", master_edge:"strike", vampiric_edge:"strike", blood_rush:"strike",
+    reinforced_guard:"guard", opening_guard:"guard", fortress:"guard", retaliation:"guard", iron_wall:"guard", stone_skin:"guard",
+    focused_charge:"charge", calm_mind:"charge", stored_power:"charge", zero_cost_focus:"charge", overpower:"charge",
+    strong_core:"survival", recovery_routine:"survival", second_wind:"survival", guardian_angel:"survival", last_stand:"survival",
+    adrenaline:"utility", extra_action:"utility", scout:"utility"
+  };
+  CTK.Data.upgrades.forEach(item => { item.buildTag=CTK.Data.upgradeBuildTags[item.id] || "utility"; });
   CTK.Data.upgradeById = Object.fromEntries(CTK.Data.upgrades.map(x => [x.id,x]));
 }());
